@@ -34,6 +34,9 @@ Raster values:
 - `3`: C
 - `4`: D
 
+Current generated raster (`hydgrpdcd.tif`) contains only codes `0, 1, 2, 3, 4`.
+Codes `5`, `6`, and `7` are not used in this product.
+
 ## Fallback Order
 
 For each mukey, the script uses the first successful source in this order:
