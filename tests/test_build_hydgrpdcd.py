@@ -191,3 +191,52 @@ def test_write_coded_raster_preserves_metadata_and_values(tmp_path: Path) -> Non
         dtype=np.uint8,
     )
     np.testing.assert_array_equal(out_band.ReadAsArray(), expected)
+
+
+def test_fill_single_pixel_zero_holes_inplace(tmp_path: Path) -> None:
+    raster = tmp_path / "holes.tif"
+    source_data = np.array(
+        [
+            [2, 2, 2, 2, 2, 2],
+            [2, 1, 1, 1, 2, 2],
+            [2, 1, 0, 1, 2, 2],  # isolated hole -> should fill
+            [2, 1, 1, 1, 0, 0],  # zero-cluster away from center -> should remain
+            [2, 2, 2, 2, 0, 0],
+        ],
+        dtype=np.uint32,
+    )
+    _create_test_uint32_raster(raster, source_data)
+
+    stats = mod.fill_single_pixel_zero_holes_inplace(raster)
+    assert stats["filled_total"] == 1
+    assert stats["filled_by_code"]["1"] == 1
+
+    out_ds = gdal.Open(str(raster), gdal.GA_ReadOnly)
+    out = out_ds.GetRasterBand(1).ReadAsArray()
+    expected = np.array(
+        [
+            [2, 2, 2, 2, 2, 2],
+            [2, 1, 1, 1, 2, 2],
+            [2, 1, 1, 1, 2, 2],  # filled
+            [2, 1, 1, 1, 0, 0],  # unchanged
+            [2, 2, 2, 2, 0, 0],
+        ],
+        dtype=np.uint8,
+    )
+    np.testing.assert_array_equal(out, expected)
+
+
+def test_apply_single_pixel_fill_to_summary() -> None:
+    summary = {
+        "width": 5,
+        "height": 5,
+        "cell_counts_by_code": {"0": 3, "1": 10, "2": 12, "3": 0, "4": 0},
+    }
+    fill = {
+        "filled_total": 2,
+        "filled_by_code": {"1": 1, "2": 1, "3": 0, "4": 0},
+    }
+    updated = mod.apply_single_pixel_fill_to_summary(summary, fill)
+    assert updated["cell_counts_by_code"]["0"] == 1
+    assert updated["cell_counts_by_code"]["1"] == 11
+    assert updated["cell_counts_by_code"]["2"] == 13

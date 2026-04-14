@@ -1,11 +1,7 @@
 {
-  "chorizon_fallback_applied": 613,
-  "chorizon_fallback_enabled": true,
-  "chorizon_texture_status_counts": {
-    "texture4_mapped": 613,
-    "texture4_missing_sand_or_clay": 896,
-    "texture_no_rows": 8977
-  },
+  "chorizon_fallback_applied": 0,
+  "chorizon_fallback_enabled": false,
+  "chorizon_texture_status_counts": {},
   "codebook": {
     "0": "NODATA",
     "1": "A",
@@ -13,9 +9,9 @@
     "3": "C",
     "4": "D"
   },
-  "component_fallback_applied": 4375,
-  "component_fallback_enabled": true,
-  "created_utc": "2026-04-14T05:32:55.170489+00:00",
+  "component_fallback_applied": 0,
+  "component_fallback_enabled": false,
+  "created_utc": "2026-04-14T06:30:26.074629+00:00",
   "dual_group_policy": "assume_d",
   "lookup_csv": "/home/geodata/ssurgo/hydgrpdcd/hydgrpdcd_lookup.csv",
   "lookup_raw_source_counts": {
@@ -32,16 +28,24 @@
   "output_raster": "/home/geodata/ssurgo/hydgrpdcd/hydgrpdcd.tif",
   "raster_summary": {
     "cell_counts_by_code": {
-      "0": 6423677184,
-      "1": 980397985,
-      "2": 1999734353,
-      "3": 2070895381,
-      "4": 3391760945
+      "0": 6423404465,
+      "1": 980424265,
+      "2": 1999793723,
+      "3": 2070945502,
+      "4": 3391897893
     },
     "height": 96538,
     "width": 153996
   },
   "sda_endpoint": "https://SDMDataAccess.nrcs.usda.gov/Tabular/post.rest",
+  "single_pixel_hole_fill_enabled": true,
+  "single_pixel_holes_filled_by_code": {
+    "1": 26280,
+    "2": 59370,
+    "3": 50121,
+    "4": 136948
+  },
+  "single_pixel_holes_filled_total": 272719,
   "source_raster": "/home/geodata/ssurgo/gNATSGSO/2025/gNATSGO_mukey_202502.tif",
   "source_vat": "/home/geodata/ssurgo/gNATSGSO/2025/gNATSGO_mukey_202502.tif.vat.dbf",
   "texture4_to_hsg_fallback_map": {
@@ -51,7 +55,7 @@
     "silt loam": "C"
   },
   "unresolved_after_chorizon_fallback": 9873,
-  "unresolved_after_component_fallback": 10486,
-  "unresolved_before_chorizon_fallback": 10486,
-  "unresolved_before_component_fallback": 14861
+  "unresolved_after_component_fallback": 9873,
+  "unresolved_before_chorizon_fallback": 9873,
+  "unresolved_before_component_fallback": 9873
 }

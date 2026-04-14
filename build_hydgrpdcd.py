@@ -23,6 +23,7 @@ import argparse
 import csv
 import json
 import math
+import os
 import time
 from collections import Counter
 from datetime import datetime, timezone
@@ -647,6 +648,178 @@ def write_coded_raster(
     }
 
 
+def fill_single_pixel_zero_holes_inplace(
+    raster_path: Path,
+    *,
+    nodata_code: int = 0,
+) -> Dict[str, object]:
+    """Fill isolated one-pixel nodata holes using 8-neighborhood majority code.
+
+    A pixel is filled only when:
+    - center value equals ``nodata_code`` (default 0), and
+    - all 8 neighbors are valid class values in ``{1,2,3,4}``.
+    """
+    src_ds = gdal.Open(str(raster_path), GA_ReadOnly)
+    if src_ds is None:
+        raise FileNotFoundError(f"Unable to open raster for hole fill: {raster_path}")
+
+    src_band = src_ds.GetRasterBand(1)
+    width = src_ds.RasterXSize
+    height = src_ds.RasterYSize
+
+    temp_path = raster_path.with_suffix(f"{raster_path.suffix}.fill_tmp")
+    driver = gdal.GetDriverByName("GTiff")
+    dst_ds = driver.Create(
+        str(temp_path),
+        width,
+        height,
+        1,
+        GDT_Byte,
+        options=[
+            "TILED=YES",
+            "COMPRESS=LZW",
+            "BIGTIFF=IF_SAFER",
+        ],
+    )
+    if dst_ds is None:
+        raise RuntimeError(f"Failed creating temporary fill raster: {temp_path}")
+
+    dst_ds.SetGeoTransform(src_ds.GetGeoTransform())
+    dst_ds.SetProjection(src_ds.GetProjection())
+    dst_band = dst_ds.GetRasterBand(1)
+    dst_band.SetNoDataValue(nodata_code)
+
+    filled_by_code = np.zeros(5, dtype=np.int64)
+    filled_total = 0
+
+    if width < 3 or height < 3:
+        for y_off in range(height):
+            row = src_band.ReadAsArray(0, y_off, width, 1)
+            if row is None:
+                raise RuntimeError(f"Failed reading raster row {y_off} during hole fill")
+            dst_band.WriteArray(row.astype(np.uint8, copy=False), 0, y_off)
+        dst_band.FlushCache()
+        dst_ds.FlushCache()
+        dst_ds = None
+        src_ds = None
+        os.replace(temp_path, raster_path)
+        return {
+            "filled_total": 0,
+            "filled_by_code": {str(code): 0 for code in range(1, 5)},
+        }
+
+    row_prev = src_band.ReadAsArray(0, 0, width, 1)
+    row_curr = src_band.ReadAsArray(0, 1, width, 1)
+    row_next = src_band.ReadAsArray(0, 2, width, 1)
+    if row_prev is None or row_curr is None or row_next is None:
+        raise RuntimeError("Failed reading initial rows for hole fill")
+
+    row_prev = row_prev.ravel().astype(np.uint8, copy=False)
+    row_curr = row_curr.ravel().astype(np.uint8, copy=False)
+    row_next = row_next.ravel().astype(np.uint8, copy=False)
+
+    # Copy first row unchanged.
+    dst_band.WriteArray(row_prev.reshape(1, -1), 0, 0)
+
+    for y_off in range(1, height - 1):
+        out_row = row_curr.copy()
+        center = row_curr[1:-1]
+
+        n0 = row_prev[:-2]
+        n1 = row_prev[1:-1]
+        n2 = row_prev[2:]
+        n3 = row_curr[:-2]
+        n4 = row_curr[2:]
+        n5 = row_next[:-2]
+        n6 = row_next[1:-1]
+        n7 = row_next[2:]
+
+        fill_mask = (
+            (center == nodata_code)
+            & (n0 > 0)
+            & (n1 > 0)
+            & (n2 > 0)
+            & (n3 > 0)
+            & (n4 > 0)
+            & (n5 > 0)
+            & (n6 > 0)
+            & (n7 > 0)
+        )
+
+        if np.any(fill_mask):
+            neighbors = np.stack((n0, n1, n2, n3, n4, n5, n6, n7), axis=0)
+            counts = np.stack(
+                [np.sum(neighbors == code, axis=0) for code in (1, 2, 3, 4)],
+                axis=0,
+            )
+            fill_values = (np.argmax(counts, axis=0) + 1).astype(np.uint8)
+            out_mid = out_row[1:-1]
+            out_mid[fill_mask] = fill_values[fill_mask]
+            out_row[1:-1] = out_mid
+
+            class_counts = np.bincount(fill_values[fill_mask], minlength=5).astype(np.int64)
+            filled_by_code += class_counts[:5]
+            filled_total += int(np.sum(fill_mask))
+
+        dst_band.WriteArray(out_row.reshape(1, -1), 0, y_off)
+
+        if y_off < height - 2:
+            row_prev = row_curr
+            row_curr = row_next
+            next_row = src_band.ReadAsArray(0, y_off + 2, width, 1)
+            if next_row is None:
+                raise RuntimeError(f"Failed reading raster row {y_off + 2} during hole fill")
+            row_next = next_row.ravel().astype(np.uint8, copy=False)
+
+        if y_off % 10000 == 0 or y_off == height - 2:
+            print(f"[info] hole-fill row {y_off}/{height - 1} complete")
+
+    # Copy last row unchanged.
+    dst_band.WriteArray(row_next.reshape(1, -1), 0, height - 1)
+
+    dst_band.FlushCache()
+    dst_ds.FlushCache()
+    dst_ds = None
+    src_ds = None
+
+    os.replace(temp_path, raster_path)
+
+    return {
+        "filled_total": int(filled_total),
+        "filled_by_code": {
+            str(code): int(filled_by_code[code]) for code in range(1, 5)
+        },
+    }
+
+
+def apply_single_pixel_fill_to_summary(
+    raster_summary: Dict[str, object],
+    fill_stats: Dict[str, object],
+) -> Dict[str, object]:
+    """Adjust pre-fill raster counts with single-pixel fill statistics."""
+    updated = {
+        "width": raster_summary["width"],
+        "height": raster_summary["height"],
+        "cell_counts_by_code": {
+            key: int(value)
+            for key, value in raster_summary["cell_counts_by_code"].items()
+        },
+    }
+
+    filled_total = int(fill_stats.get("filled_total", 0))
+    if filled_total <= 0:
+        return updated
+
+    updated["cell_counts_by_code"]["0"] = (
+        int(updated["cell_counts_by_code"].get("0", 0)) - filled_total
+    )
+    for code_str, value in (fill_stats.get("filled_by_code") or {}).items():
+        updated["cell_counts_by_code"][code_str] = (
+            int(updated["cell_counts_by_code"].get(code_str, 0)) + int(value)
+        )
+    return updated
+
+
 def write_metadata_json(
     metadata_path: Path,
     *,
@@ -668,6 +841,9 @@ def write_metadata_json(
     unresolved_after_chorizon_fallback: int,
     chorizon_fallback_applied: int,
     chorizon_texture_status_counts: Counter,
+    single_pixel_hole_fill_enabled: bool,
+    single_pixel_holes_filled_total: int,
+    single_pixel_holes_filled_by_code: Dict[str, int],
 ) -> None:
     metadata = {
         "created_utc": datetime.now(timezone.utc).isoformat(),
@@ -698,6 +874,12 @@ def write_metadata_json(
             for key, value in sorted(chorizon_texture_status_counts.items())
         },
         "texture4_to_hsg_fallback_map": SIMPLE_TEXTURE_TO_HSG,
+        "single_pixel_hole_fill_enabled": single_pixel_hole_fill_enabled,
+        "single_pixel_holes_filled_total": int(single_pixel_holes_filled_total),
+        "single_pixel_holes_filled_by_code": {
+            key: int(value)
+            for key, value in sorted(single_pixel_holes_filled_by_code.items())
+        },
         "raster_summary": raster_summary,
     }
     metadata_path.parent.mkdir(parents=True, exist_ok=True)
@@ -803,6 +985,22 @@ def build_parser() -> argparse.ArgumentParser:
         dest="chorizon_fallback",
         action="store_false",
         help="Disable chorizon/chtexturegrp fallback.",
+    )
+    parser.add_argument(
+        "--fill-single-pixel-holes",
+        dest="fill_single_pixel_holes",
+        action="store_true",
+        default=True,
+        help=(
+            "Fill isolated single-pixel nodata holes (0) that are fully "
+            "surrounded by valid 1-4 neighbors."
+        ),
+    )
+    parser.add_argument(
+        "--no-fill-single-pixel-holes",
+        dest="fill_single_pixel_holes",
+        action="store_false",
+        help="Disable post-processing fill of isolated single-pixel nodata holes.",
     )
     return parser
 
@@ -974,6 +1172,19 @@ def main() -> int:
         nodata_code=0,
     )
 
+    hole_fill_stats: Dict[str, object] = {
+        "filled_total": 0,
+        "filled_by_code": {str(code): 0 for code in range(1, 5)},
+    }
+    if args.fill_single_pixel_holes:
+        print("[info] filling isolated single-pixel nodata holes")
+        hole_fill_stats = fill_single_pixel_zero_holes_inplace(args.output_raster)
+        raster_summary = apply_single_pixel_fill_to_summary(raster_summary, hole_fill_stats)
+        print(
+            "[info] single-pixel hole fill complete: "
+            f"{hole_fill_stats['filled_total']} pixels filled"
+        )
+
     write_metadata_json(
         args.metadata_json,
         source_raster=args.source_raster,
@@ -994,6 +1205,12 @@ def main() -> int:
         unresolved_after_chorizon_fallback=unresolved_after_chorizon_fallback,
         chorizon_fallback_applied=chorizon_fallback_applied,
         chorizon_texture_status_counts=chorizon_texture_status_counts,
+        single_pixel_hole_fill_enabled=bool(args.fill_single_pixel_holes),
+        single_pixel_holes_filled_total=int(hole_fill_stats["filled_total"]),
+        single_pixel_holes_filled_by_code={
+            str(key): int(value)
+            for key, value in (hole_fill_stats.get("filled_by_code") or {}).items()
+        },
     )
     print(f"[info] wrote metadata JSON: {args.metadata_json}")
     print("[info] done")
