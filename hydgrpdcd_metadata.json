@@ -1,0 +1,57 @@
+{
+  "chorizon_fallback_applied": 613,
+  "chorizon_fallback_enabled": true,
+  "chorizon_texture_status_counts": {
+    "texture4_mapped": 613,
+    "texture4_missing_sand_or_clay": 896,
+    "texture_no_rows": 8977
+  },
+  "codebook": {
+    "0": "NODATA",
+    "1": "A",
+    "2": "B",
+    "3": "C",
+    "4": "D"
+  },
+  "component_fallback_applied": 4375,
+  "component_fallback_enabled": true,
+  "created_utc": "2026-04-14T05:32:55.170489+00:00",
+  "dual_group_policy": "assume_d",
+  "lookup_csv": "/home/geodata/ssurgo/hydgrpdcd/hydgrpdcd_lookup.csv",
+  "lookup_raw_source_counts": {
+    "chorizon_chtexturegrp_fallback": 613,
+    "component_hydgrp_major": 4375,
+    "muaggatt": 315681
+  },
+  "lookup_status_counts": {
+    "missing_raw": 9873,
+    "ok": 262638,
+    "ok_dual_assume_d": 48158
+  },
+  "mukey_count": 320669,
+  "output_raster": "/home/geodata/ssurgo/hydgrpdcd/hydgrpdcd.tif",
+  "raster_summary": {
+    "cell_counts_by_code": {
+      "0": 6423677184,
+      "1": 980397985,
+      "2": 1999734353,
+      "3": 2070895381,
+      "4": 3391760945
+    },
+    "height": 96538,
+    "width": 153996
+  },
+  "sda_endpoint": "https://SDMDataAccess.nrcs.usda.gov/Tabular/post.rest",
+  "source_raster": "/home/geodata/ssurgo/gNATSGSO/2025/gNATSGO_mukey_202502.tif",
+  "source_vat": "/home/geodata/ssurgo/gNATSGSO/2025/gNATSGO_mukey_202502.tif.vat.dbf",
+  "texture4_to_hsg_fallback_map": {
+    "clay loam": "D",
+    "loam": "B",
+    "sand loam": "B",
+    "silt loam": "C"
+  },
+  "unresolved_after_chorizon_fallback": 9873,
+  "unresolved_after_component_fallback": 10486,
+  "unresolved_before_chorizon_fallback": 10486,
+  "unresolved_before_component_fallback": 14861
+}
